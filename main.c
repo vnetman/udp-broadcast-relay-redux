@@ -7,9 +7,9 @@ udp-broadcast-relay
 Copyright (c) 2003 Joachim Breitner <mail@joachim-breitner.de>
 
 Based upon:
-udp_broadcast_fw ; Forwards UDP broadcast packets to all local 
+udp_broadcast_fw ; Forwards UDP broadcast packets to all local
 	interfaces as though they originated from sender
-	
+
 Copyright (C) 2002  Nathan O'Sullivan
 
 This program is free software; you can redistribute it and/or
@@ -25,7 +25,7 @@ GNU General Public License for more details.
 
 Thanks:
 
-Arny <cs6171@scitsc.wlv.ac.uk> 
+Arny <cs6171@scitsc.wlv.ac.uk>
 - public domain UDP spoofing code
 http://www.netfor2.com/ip.htm
 - IP/UDP packet formatting info
@@ -33,12 +33,13 @@ http://www.netfor2.com/ip.htm
 */
 
 #define MAXIFS	256
+#define MAXMULTICAST 256
 #define DPRINT  if (debug) printf
 #define IPHEADER_LEN 20
 #define UDPHEADER_LEN 8
 #define HEADER_LEN (IPHEADER_LEN + UDPHEADER_LEN)
 #define TTL_ID_OFFSET 64
- 
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in_systm.h>
@@ -49,16 +50,24 @@ http://www.netfor2.com/ip.htm
 #include <string.h>
 #include <arpa/inet.h>
 #include <stdio.h>
+#ifdef __FreeBSD__
+#include <net/if.h>
+#include <net/if_dl.h>
+#else
 #include <linux/if.h>
+#endif
 #include <sys/ioctl.h>
 #include <stdlib.h>
 #include <unistd.h>
 
 /* list of addresses and interface numbers on local machine */
-static struct {
-	struct sockaddr_in dstaddr;
-	int ifindex, raw_socket;
-} ifs[MAXIFS];
+struct Iface {
+	struct in_addr dstaddr;
+	struct in_addr ifaddr;
+	int ifindex;
+	int raw_socket;
+};
+static struct Iface ifs[MAXIFS];
 
 /* Where we forge our packets */
 static u_char gram[4096]=
@@ -73,55 +82,38 @@ static u_char gram[4096]=
 	'1','2','3','4','5','6','7','8','9','0'
 };
 
-int main(int argc,char **argv)
-{
+void inet_ntoa2(struct in_addr in, char* chr, int len) {
+	char* from = inet_ntoa(in);
+	strncpy(chr, from, len);
+}
+
+int main(int argc,char **argv) {
 	/* Debugging, forking, other settings */
-	int debug, forking;
-	
-	u_int16_t port;
-	u_char id;
-	u_char ttl;
+	int debug = 0, forking = 0;
+	u_int16_t port = 0;
+	u_char id = 0;
+	char* multicastAddrs[MAXMULTICAST];
+	int multicastAddrsNum = 0;
+	char* interfaceNames[MAXIFS];
+	int interfaceNamesNum = 0;
+    in_addr_t spoof_addr = 0;
 
-	/* We use two sockets - one for receiving broadcast packets (type UDP), and
-	   one for spoofing them (type RAW) */
-	int fd,rcv;
-
-	/* Structure holds info on local interfaces */
-	struct ifreq reqbuf;
-	int maxifs;
-		
 	/* Address broadcast packet was sent from */
 	struct sockaddr_in rcv_addr;
-
-        /* Spoofing source address of outgoing packets */
-        in_addr_t spoof_addr = 0;
-	
-	/* Incoming message read via rcvsmsg */
 	struct msghdr rcv_msg;
 	struct iovec iov;
-	u_char pkt_infos[16384];
-
-	/* various variables */
-	int x=1, len;
-	
-	struct cmsghdr *cmsg;
-	int *ttlptr=NULL;
-	int rcv_ifindex = 0;
-
-	iov.iov_base = gram+ HEADER_LEN; 
+	iov.iov_base = gram + HEADER_LEN;
 	iov.iov_len = 4006 - HEADER_LEN - 1;
-	
+	u_char pkt_infos[16384];
 	rcv_msg.msg_name = &rcv_addr;
 	rcv_msg.msg_namelen = sizeof(rcv_addr);
 	rcv_msg.msg_iov = &iov;
 	rcv_msg.msg_iovlen = 1;
 	rcv_msg.msg_control = pkt_infos;
 	rcv_msg.msg_controllen = sizeof(pkt_infos);
-	
-	/* parsing the args */
-	if(argc < 5)
-	{
-		fprintf(stderr,"usage: %s [-d] [-f] [-s IP] id udp-port dev1 dev2 ...\n\n",*argv);
+
+	if(argc < 2) {
+		fprintf(stderr,"usage: %s [-d] [-f] [-s IP] [--id id] [--port udp-port] [--dev dev1]... [--multicast ip]...\n\n",*argv);
 		fprintf(stderr,"This program listens for broadcast  packets  on the  specified UDP port\n"
 			"and then forwards them to each other given interface.  Packets are sent\n"
 			"such that they appear to have come from the original broadcaster, resp.\n"
@@ -130,70 +122,82 @@ int main(int argc,char **argv)
 			"    -d      enables debugging\n"
 			"    -f      forces forking to background\n"
 			"    -s IP   sets the source IP of forwarded packets; otherwise the\n"
-			"            original sender's address is used\n\n");
-		exit(1);
-	};
-	
-	if ((debug = (strcmp(argv[1],"-d") == 0)))
-	{
-		argc--;
-		argv++;
-		DPRINT ("Debugging Mode enabled\n");
-	};
-	
-	if ((forking = (strcmp(argv[1],"-f") == 0)))
-	{
-		argc--;
-		argv++;
-		DPRINT ("Forking Mode enabled (while debuggin? useless..)\n");
-	};
-
-	if (strcmp(argv[1],"-s") == 0)
-	{
-		/* INADDR_NONE is a valid IP address (-1 = 255.255.255.255),
-		 * so inet_pton() would be a better choice. But in this case it
-		 * does not matter. */
-		spoof_addr = inet_addr(argv[2]);
-		if (spoof_addr == INADDR_NONE) {
-			fprintf (stderr,"invalid IP address: %s\n", argv[2]);
-			exit(1);
-		}
-		DPRINT ("Outgoing source IP set to %s\n", argv[2]);
-		argc-=2;
-		argv+=2;
-	};
-
-	if ((id = atoi(argv[1])) == 0)
-	{
-		fprintf (stderr,"ID argument not valid\n");
+			"            original sender's address is used. 1.1.1.1 uses outgoing\n"
+			"            interface address.\n\n"
+		);
 		exit(1);
 	}
-	argc--;
-	argv++;
+
+	for (int i = 1; i < argc; i++) {
+		if (strcmp(argv[i],"-d") == 0) {
+			DPRINT ("Debugging Mode enabled\n");
+			debug = 1;
+		}
+	}
+	for (int i = 1; i < argc; i++) {
+		if (strcmp(argv[i],"-d") == 0) {
+			// Already handled
+		} else if (strcmp(argv[i],"-f") == 0) {
+			DPRINT ("Forking Mode enabled\n");
+			forking = 1;
+		}
+		else if (strcmp(argv[i],"-s") == 0) {
+			/* INADDR_NONE is a valid IP address (-1 = 255.255.255.255),
+			 * so inet_pton() would be a better choice. But in this case it
+			 * does not matter. */
+			i++;
+			spoof_addr = inet_addr(argv[i]);
+			if (spoof_addr == INADDR_NONE) {
+				fprintf (stderr,"invalid IP address: %s\n", argv[i]);
+				exit(1);
+			}
+			DPRINT ("Outgoing source IP set to %s\n", argv[i]);
+		}
+		else if (strcmp(argv[i],"--id") == 0) {
+			i++;
+			id = atoi(argv[i]);
+			DPRINT ("ID set to %i\n", id);
+		}
+		else if (strcmp(argv[i],"--port") == 0) {
+			i++;
+			port = atoi(argv[i]);
+			DPRINT ("Port set to %i\n", id);
+		}
+		else if (strcmp(argv[i],"--dev") == 0) {
+			i++;
+			interfaceNames[interfaceNamesNum] = argv[i];
+			interfaceNamesNum++;
+		}
+		else if (strcmp(argv[i],"--multicast") == 0) {
+			i++;
+			multicastAddrs[multicastAddrsNum] = argv[i];
+			multicastAddrsNum++;
+		}
+		else if (strncmp(argv[i], "-", 1) == 0) {
+			fprintf (stderr, "Unknown arg: %s\n", argv[i]);
+			exit(1);
+		}
+		else {
+			break;
+		}
+	}
 
 	if (id < 1 || id > 99)
 	{
 		fprintf (stderr,"ID argument %i not between 1 and 99\n",id);
 		exit(1);
 	}
-	ttl = id+TTL_ID_OFFSET;
-	gram[8] = ttl;
-	/* The id is used to detect packets we just sent, and is stored in the "ttl" field,
-	 * which is not used with broadcast packets. Beware when using this with
-	 * non-broadcast-packets */
-	
-	if ((port = atoi(argv[1])) == 0)
-	{
+	if (port < 1 || port > 65535) {
 		fprintf (stderr,"Port argument not valid\n");
 		exit(1);
 	}
-	argc--;
-	argv++;
-	
+
+	u_char ttl = id+TTL_ID_OFFSET;
+
 	DPRINT ("ID: %i (ttl: %i), Port %i\n",id,ttl,port);
 
-
 	/* We need to find out what IP's are bound to this host - set up a temporary socket to do so */
+	int fd;
  	if((fd=socket(AF_INET,SOCK_RAW,IPPROTO_RAW)) < 0)
 	{
   		perror("socket");
@@ -202,208 +206,372 @@ int main(int argc,char **argv)
   	};
 
 	/* For each interface on the command line */
-	for (maxifs=0;argc>1;argc--,argv++)
-	{
-		int ioctl_request; 
+	int maxifs = 0;
+	for (int i = 0; i < interfaceNamesNum; i++) {
+		struct Iface* iface = &ifs[maxifs];
 
-		strncpy(reqbuf.ifr_name,argv[1],IFNAMSIZ);
+		struct ifreq basereq;
+		strncpy(basereq.ifr_name,interfaceNames[i],IFNAMSIZ);
 
 		/* Request index for this interface */
-		if (ioctl(fd,SIOCGIFINDEX, &reqbuf) < 0) {
-			perror("ioctl(SIOCGIFINDEX)");
-			exit(1);
+		{
+			struct ifreq req;
+			memcpy(&req, &basereq, sizeof(req));
+			if (ioctl(fd,SIOCGIFINDEX, &req) < 0) {
+				perror("ioctl(SIOCGIFINDEX)");
+				exit(1);
+			}
+			#ifdef __FreeBSD__
+			iface->ifindex = req.ifr_index;
+			#else
+			iface->ifindex = req.ifr_ifindex;
+			#endif
 		}
-		
-		/* Save the index for later use */	
-		ifs[maxifs].ifindex = reqbuf.ifr_ifindex;
-		
+
 		/* Request flags for this interface */
-		if (ioctl(fd,SIOCGIFFLAGS, &reqbuf) < 0) {
-			perror("ioctl(SIOCGIFFLAGS)");
-			exit(1);
+		short ifFlags;
+		{
+			struct ifreq req;
+			memcpy(&req, &basereq, sizeof(req));
+			if (ioctl(fd,SIOCGIFFLAGS, &req) < 0) {
+				perror("ioctl(SIOCGIFFLAGS)");
+				exit(1);
+			}
+			ifFlags = req.ifr_flags;
 		}
 
 		/* if the interface is not up or a loopback, ignore it */
-		if ((reqbuf.ifr_flags & IFF_UP) == 0 ||
-      		    (reqbuf.ifr_flags & IFF_LOOPBACK) )
+		if ((ifFlags & IFF_UP) == 0 || (ifFlags & IFF_LOOPBACK)) {
 			continue;
+		}
 
-		/* find the address type we need */
-		if (reqbuf.ifr_flags & IFF_BROADCAST)
-			ioctl_request = SIOCGIFBRDADDR;
-		else 
-			ioctl_request = SIOCGIFDSTADDR;
-				
-
-		/* Request the broadcast/destination address for this interface */
-  		if (ioctl(fd,ioctl_request, &reqbuf) < 0) {
-      			perror("ioctl(SIOCGIFBRDADDR)");
-      			exit(1);
-    		}
-
-		/* Save the address for later use */
-		bcopy(	(struct sockaddr_in *)&reqbuf.ifr_addr,
-			&ifs[maxifs].dstaddr,
-			sizeof(struct sockaddr_in) );
-
-		DPRINT("%s: %i / %s\n",
-			reqbuf.ifr_name,
-			ifs[maxifs].ifindex,
-			inet_ntoa(ifs[maxifs].dstaddr.sin_addr) );
-
-		/* Set up a one raw socket per interface for sending our packets through */
-		if((ifs[maxifs].raw_socket = socket(AF_INET,SOCK_RAW,IPPROTO_RAW)) < 0)
+		/* Get local IP for interface */
 		{
+			struct ifreq req;
+			memcpy(&req, &basereq, sizeof(req));
+			if (ioctl(fd,SIOCGIFADDR, &req) < 0) {
+				perror("ioctl(SIOCGIFADDR)");
+				exit(1);
+			}
+			memcpy(
+				&iface->ifaddr,
+				&((struct sockaddr_in *)&req.ifr_addr)->sin_addr,
+				sizeof(struct in_addr)
+			);
+		}
+
+		/* Get broadcast address for interface */
+		{
+			struct ifreq req;
+			memcpy(&req, &basereq, sizeof(req));
+			if (ifFlags & IFF_BROADCAST) {
+				if (ioctl(fd,SIOCGIFBRDADDR, &req) < 0) {
+					perror("ioctl(SIOCGIFBRDADDR)");
+					exit(1);
+				}
+				memcpy(
+					&iface->dstaddr,
+					&((struct sockaddr_in *)&req.ifr_broadaddr)->sin_addr,
+					sizeof(struct in_addr)
+				);
+			} else {
+				if (ioctl(fd,SIOCGIFDSTADDR, &req) < 0) {
+					perror("ioctl(SIOCGIFBRDADDR)");
+					exit(1);
+				}
+				memcpy(
+					&iface->dstaddr,
+					&((struct sockaddr_in *)&req.ifr_dstaddr)->sin_addr,
+					sizeof(struct in_addr)
+				);
+			}
+		}
+
+		char ifaddr[255];
+		inet_ntoa2(iface->ifaddr, ifaddr, sizeof(ifaddr));
+		char dstaddr[255];
+		inet_ntoa2(iface->dstaddr, dstaddr, sizeof(dstaddr));
+
+		DPRINT(
+			"%s: %i / %s / %s\n",
+			basereq.ifr_name,
+			iface->ifindex,
+			ifaddr,
+			dstaddr
+		);
+
+		// Set up a one raw socket per interface for sending our packets through
+		if((iface->raw_socket = socket(AF_INET,SOCK_RAW,IPPROTO_RAW)) < 0) {
 			perror("socket");
 			exit(1);
-		};
-		x=1;
-		if (setsockopt(ifs[maxifs].raw_socket,SOL_SOCKET,SO_BROADCAST,(char*)&x,sizeof(x))<0)
+		}
 		{
-			perror("setsockopt SO_BROADCAST");
-			exit(1);
-		};
-		/* bind socket to dedicated NIC (override routing table) */
-		if (setsockopt(ifs[maxifs].raw_socket,SOL_SOCKET,SO_BINDTODEVICE,argv[1],strlen(argv[1])+1)<0)
-		{
-			perror("setsockopt IP_HDRINCL");
-			exit(1);
-		};
-		/* Enable IP header stuff on the raw socket */
-		#ifdef IP_HDRINCL
-		x=1;
-		if (setsockopt(ifs[maxifs].raw_socket,IPPROTO_IP,IP_HDRINCL,(char*)&x,sizeof(x))<0)
-		{
-			perror("setsockopt IP_HDRINCL");
-			exit(1);
-		};
-		#else
-		#error IP_HDRINCL support is required
-		#endif
+			int yes = 1;
+			int no = 0;
+			if (setsockopt(iface->raw_socket, SOL_SOCKET, SO_BROADCAST, &yes, sizeof(yes))<0) {
+				perror("setsockopt SO_BROADCAST");
+				exit(1);
+			}
+			if (setsockopt(iface->raw_socket, IPPROTO_IP, IP_HDRINCL, &yes, sizeof(yes))<0) {
+				perror("setsockopt IP_HDRINCL");
+				exit(1);
+			}
+			if (setsockopt(iface->raw_socket, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes))<0) {
+				perror("setsockopt SO_REUSEPORT");
+				exit(1);
+			}
+			#ifdef __FreeBSD__
+				if((setsockopt(iface->raw_socket, IPPROTO_IP, IP_MULTICAST_LOOP, &no, sizeof(no))) < 0) {
+					perror("setsockopt IP_MULTICAST_LOOP");
+				}
+				if((setsockopt(iface->raw_socket, IPPROTO_IP, IP_MULTICAST_IF, &iface->ifaddr, sizeof(iface->ifaddr))) < 0) {
+					perror("setsockopt IP_MULTICAST_IF");
+				}
+				int setttl = ttl;
+				if((setsockopt(iface->raw_socket, IPPROTO_IP, IP_MULTICAST_TTL, &setttl, sizeof(setttl))) < 0) {
+					perror("setsockopt IP_MULTICAST_TTL");
+				}
+			#else
+				// bind socket to dedicated NIC (override routing table)
+				if (setsockopt(iface->raw_socket, SOL_SOCKET, SO_BINDTODEVICE, interfaceNames[i], strlen(interfaceNames[i])+1)<0)
+				{
+					perror("setsockopt SO_BINDTODEVICE");
+					exit(1);
+				};
+			#endif
+		}
 
 		/* ... and count it */
 		maxifs++;
 	}
-	/* well, we want the max index, actually */
-	maxifs--;
-	DPRINT("found %i interfaces total\n",maxifs+1);
-	
+
+	DPRINT("found %i interfaces total\n",maxifs);
+
 	/* Free our allocated buffer and close the socket */
 	close(fd);
 
 	/* Create our broadcast receiving socket */
-	if((rcv=socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP)) < 0)
-  	{
-  		perror("socket");
-  		exit(1);
-  	};
-
-	x = 1;
-	if(setsockopt(rcv, SOL_SOCKET, SO_BROADCAST, (char*) &x, sizeof(int))<0){
-		perror("SO_BROADCAST on rcv");
-		exit(1);
-	};
-	if(setsockopt(rcv, SOL_IP, IP_RECVTTL, (char*) &x, sizeof(int))<0){
-		perror("IP_RECVTTL on rcv");
-		exit(1);
-	};
-	if(setsockopt(rcv, SOL_IP, IP_PKTINFO, (char*) &x, sizeof(int))<0){
-		perror("IP_PKTINFO on rcv");
-		exit(1);
-	};
-
-	/* We bind it to broadcast addr on the given port */
-	rcv_addr.sin_family = AF_INET;
-	rcv_addr.sin_port = htons(port);
-	rcv_addr.sin_addr.s_addr = INADDR_ANY;
-
-	if ( bind (rcv, (struct sockaddr *)&rcv_addr, sizeof(struct sockaddr_in) ) < 0 )
+	int rcv;
 	{
-		perror("bind");
-		fprintf(stderr,"A program is already bound to the broadcast address for the given port\n");
-		exit(1);
+		if((rcv=socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP)) < 0)
+	  	{
+	  		perror("socket");
+	  		exit(1);
+	  	}
+		int yes = 1;
+		if(setsockopt(rcv, SOL_SOCKET, SO_BROADCAST, &yes, sizeof(yes))<0){
+			perror("SO_BROADCAST on rcv");
+			exit(1);
+		};
+		if (setsockopt(rcv, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes))<0) {
+			perror("SO_REUSEPORT on rcv");
+			exit(1);
+		}
+		#ifdef __FreeBSD__
+			if(setsockopt(rcv, IPPROTO_IP, IP_RECVTTL, &yes, sizeof(yes))<0){
+				perror("IP_RECVTTL on rcv");
+				exit(1);
+			};
+			if(setsockopt(rcv, IPPROTO_IP, IP_RECVIF, &yes, sizeof(yes))<0){
+				perror("IP_RECVIF on rcv");
+				exit(1);
+			};
+			if(setsockopt(rcv, IPPROTO_IP, IP_RECVDSTADDR, &yes, sizeof(yes))<0){
+				perror("IP_RECVDSTADDR on rcv");
+				exit(1);
+			};
+		#else
+			if(setsockopt(rcv, SOL_IP, IP_RECVTTL, &yes, sizeof(yes))<0){
+				perror("IP_RECVTTL on rcv");
+				exit(1);
+			};
+			if(setsockopt(rcv, SOL_IP, IP_PKTINFO, &yes, sizeof(yes))<0){
+				perror("IP_PKTINFO on rcv");
+				exit(1);
+			};
+		#endif
+		for (int i = 0; i < multicastAddrsNum; i++) {
+			for (int x = 0; x < maxifs; x++) {
+				struct ip_mreq mreq;
+				memset(&mreq, 0, sizeof(struct ip_mreq));
+				mreq.imr_interface.s_addr = ifs[x].ifaddr.s_addr;
+				mreq.imr_multiaddr.s_addr = inet_addr(multicastAddrs[i]);
+				DPRINT("IP_ADD_MEMBERSHIP:\t\t%s %s\n",inet_ntoa(ifs[x].ifaddr),multicastAddrs[i]);
+				if(setsockopt(rcv, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq))<0){
+					perror("IP_ADD_MEMBERSHIP on rcv");
+					exit(1);
+				}
+			}
+		}
+
+		struct sockaddr_in bind_addr;
+		bind_addr.sin_family = AF_INET;
+		bind_addr.sin_port = htons(port);
+		bind_addr.sin_addr.s_addr = INADDR_ANY;
+		if(bind(rcv, (struct sockaddr *)&bind_addr, sizeof(bind_addr)) < 0) {
+			perror("bind");
+			fprintf(stderr,"rcv bind\n");
+			exit(1);
+		}
 	}
 
-	/* Set dest port to that was provided on command line */
-	*(u_short*)(gram+22)=(u_short)htons(port);
+	DPRINT("Done Initializing\n\n");
 
- 	/* Fork to background */
-  if (! debug) {
-    if (forking && fork())
-      exit(0);
-
-    fclose(stdin);
-    fclose(stdout);
-    fclose(stderr);
-  }
-
-  DPRINT("Done Initializing\n\n");
+	/* Fork to background */
+	if (! debug) {
+		if (forking && fork())
+		exit(0);
+		fclose(stdin);
+		fclose(stdout);
+		fclose(stderr);
+	}
 
 	for (;;) /* endless loop */
 	{
 		/* Receive a broadcast packet */
-		len = recvmsg(rcv,&rcv_msg,0);
+		int len = recvmsg(rcv,&rcv_msg,0);
 		if (len <= 0) continue;	/* ignore broken packets */
 
 		/* Find the ttl and the receiving interface */
-		ttlptr=NULL;
-		if (rcv_msg.msg_controllen>0)
-		  for (cmsg=CMSG_FIRSTHDR(&rcv_msg);cmsg;cmsg=CMSG_NXTHDR(&rcv_msg,cmsg)) {
-		    if (cmsg->cmsg_type==IP_TTL) {
-		      ttlptr = (int *)CMSG_DATA(cmsg);
-		    }
-		    if (cmsg->cmsg_type==IP_PKTINFO) {
-		      rcv_ifindex=((struct in_pktinfo *)CMSG_DATA(cmsg))->ipi_ifindex;
-		    }
-		  }
-
-		if (ttlptr == NULL) {
-			perror("TTL not found on incoming packet\n");
-			exit(1);
+		struct cmsghdr *cmsg;
+		int rcv_ttl = 0;
+		int rcv_ifindex = 0;
+		struct in_addr rcv_inaddr;
+		int foundRcvIf = 0;
+		int foundRcvIp = 0;
+		if (rcv_msg.msg_controllen > 0) {
+			for (cmsg=CMSG_FIRSTHDR(&rcv_msg);cmsg;cmsg=CMSG_NXTHDR(&rcv_msg,cmsg)) {
+				#ifdef __FreeBSD__
+				if (cmsg->cmsg_type==IP_RECVTTL) {
+					rcv_ttl = *(int *)CMSG_DATA(cmsg);
+				}
+				if (cmsg->cmsg_type==IP_RECVDSTADDR) {
+					rcv_inaddr=*((struct in_addr *)CMSG_DATA(cmsg));
+					foundRcvIp = 1;
+				}
+				if (cmsg->cmsg_type==IP_RECVIF) {
+					rcv_ifindex=((struct sockaddr_dl *)CMSG_DATA(cmsg))->sdl_index;
+					foundRcvIf = 1;
+				}
+				#else
+				if (cmsg->cmsg_type==IP_TTL) {
+					rcv_ttl = *(int *)CMSG_DATA(cmsg);
+				}
+				if (cmsg->cmsg_type==IP_PKTINFO) {
+					rcv_ifindex=((struct in_pktinfo *)CMSG_DATA(cmsg))->ipi_ifindex;
+					foundRcvIf = 1;
+					rcv_inaddr=((struct in_pktinfo *)CMSG_DATA(cmsg))->ipi_addr;
+					foundRcvIp = 1;
+				}
+				#endif
+			}
 		}
-		if (*ttlptr == ttl) {
-			DPRINT ("Got local package (TTL %i) on interface %i\n",*ttlptr,rcv_ifindex);
+
+		if (!foundRcvIp) {
+			perror("Source IP not found on incoming packet\n");
 			continue;
 		}
-		
+		if (!foundRcvIf) {
+			perror("Interface not found on incoming packet\n");
+			continue;
+		}
+		if (!rcv_ttl) {
+			perror("TTL not found on incoming packet\n");
+			continue;
+		}
 
-		gram[HEADER_LEN + len] =0;
-		DPRINT("Got remote package:\n");
-		// DPRINT("Content:\t%s\n",gram+HEADER_LEN);
-		DPRINT("TTL:\t\t%i\n",*ttlptr);
-		DPRINT("Interface:\t%i\n",rcv_ifindex);
-		DPRINT("From:\t\t%s:%d\n",inet_ntoa(rcv_addr.sin_addr),rcv_addr.sin_port);
-	
-		/* copy sender's details into our datagram as the source addr */	
-		if (spoof_addr)
-			rcv_addr.sin_addr.s_addr = spoof_addr;
-		bcopy(&(rcv_addr.sin_addr.s_addr),(gram+12),4);
-	  	*(u_short*)(gram+20)=(u_short)rcv_addr.sin_port;
+		struct in_addr origFromAddress = rcv_addr.sin_addr;
+		u_short origFromPort = ntohs(rcv_addr.sin_port);
+		struct in_addr origToAddress = rcv_inaddr;
+		u_short origToPort = port;
 
-		/* set the length of the packet */
-		*(u_short*)(gram+24)=htons(8 + len);
-		*(u_short*)(gram+2)=htons(28+len);
+		gram[HEADER_LEN + len] = 0;
+
+		char origFromAddressStr[255];
+		inet_ntoa2(origFromAddress, origFromAddressStr, sizeof(origFromAddressStr));
+		char origToAddressStr[255];
+		inet_ntoa2(origToAddress, origToAddressStr, sizeof(origToAddressStr));
+		DPRINT("<- [ %s:%d -> %s:%d (iface=%d len=%i ttl=%i)\n",
+			origFromAddressStr, origFromPort,
+			origToAddressStr, origToPort,
+			rcv_ifindex, len, rcv_ttl
+		);
+
+		if (rcv_ttl == ttl) {
+			DPRINT("Echo (Ignored)\n\n");
+			continue;
+		}
 
 		/* Iterate through our interfaces and send packet to each one */
-		for (x=0;x<=maxifs;x++)
-		{
-			if (ifs[x].ifindex == rcv_ifindex) continue; /* no bounces, please */
+		for (int x=0;x<maxifs;x++) {
+			struct Iface* iface = &ifs[x];
 
-			/* Set destination addr ip - port is set already */
-			bcopy(&(ifs[x].dstaddr.sin_addr.s_addr),(gram+16),4);	
+			/* no bounces, please */
+			if (iface->ifindex == rcv_ifindex) continue;
 
-			DPRINT ("Sent to %s:%d on interface %i\n",
-				inet_ntoa(ifs[x].dstaddr.sin_addr), /* dst ip */
-				ntohs(*(u_short*)(gram+22)), /* dst port */
-				ifs[x].ifindex); /* interface number */
-				
+			struct in_addr fromAddress;
+			u_short fromPort;
+			if (spoof_addr == inet_addr("1.1.1.1")) {
+				fromAddress = iface->ifaddr;
+				fromPort = port;
+			} else if (spoof_addr) {
+				fromAddress.s_addr = spoof_addr;
+				fromPort = origFromPort;
+			} else {
+				fromAddress = origFromAddress;
+				fromPort = origFromPort;
+			}
+
+			struct in_addr toAddress;
+			if (rcv_inaddr.s_addr == INADDR_BROADCAST
+			    || rcv_inaddr.s_addr == ifs[rcv_ifindex].dstaddr.s_addr) {
+				// Received on interface broadcast address -- rewrite to new interface broadcast addr
+				toAddress = iface->dstaddr;
+			} else {
+				// Send to whatever IP it was originally to
+				toAddress = rcv_inaddr;
+			}
+			u_short toPort = origToPort;
+
+			char fromAddressStr[255];
+			inet_ntoa2(fromAddress, fromAddressStr, sizeof(fromAddressStr));
+			char toAddressStr[255];
+			inet_ntoa2(toAddress, toAddressStr, sizeof(toAddressStr));
+			DPRINT (
+				"-> [ %s:%d -> %s:%d (iface=%d)\n",
+				fromAddressStr, fromPort,
+				toAddressStr, toPort,
+				iface->ifindex
+			);
+
 			/* Send the packet */
-			if (sendto(ifs[x].raw_socket,
-					&gram,
-					28+len,0,
-					(struct sockaddr*)&ifs[x].dstaddr,sizeof(struct sockaddr)
-				) < 0)
+			gram[8] = ttl;
+			memcpy(gram+12, &fromAddress.s_addr, 4);
+			memcpy(gram+16, &toAddress.s_addr, 4);
+			*(u_short*)(gram+20)=htons(fromPort);
+			*(u_short*)(gram+22)=htons(toPort);
+			#ifdef __FreeBSD__
+			*(u_short*)(gram+24)=htons(UDPHEADER_LEN + len);
+			*(u_short*)(gram+2)=HEADER_LEN + len;
+			#else
+			*(u_short*)(gram+24)=htons(UDPHEADER_LEN + len);
+			*(u_short*)(gram+2)=htons(HEADER_LEN + len);
+			#endif
+			struct sockaddr_in sendAddr;
+			sendAddr.sin_family = AF_INET;
+			sendAddr.sin_port = htons(toPort);
+			sendAddr.sin_addr = toAddress;
+
+			if (sendto(
+				iface->raw_socket,
+				&gram,
+				HEADER_LEN+len,
+				0,
+				(struct sockaddr*)&sendAddr,
+				sizeof(sendAddr)
+			) < 0) {
 				perror("sendto");
+			}
 		}
 		DPRINT ("\n");
 	}
