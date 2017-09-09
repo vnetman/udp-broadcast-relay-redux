@@ -1,16 +1,12 @@
 /*
 ******************************************************************
-udp-broadcast-relay
+udp-broadcast-relay-redux
 	Relays UDP broadcasts to other networks, forging
 	the sender address.
 
+Copyright (c) 2017 Michael Morrison <github.com/sonicsnes>
 Copyright (c) 2003 Joachim Breitner <mail@joachim-breitner.de>
-
-Based upon:
-udp_broadcast_fw ; Forwards UDP broadcast packets to all local
-	interfaces as though they originated from sender
-
-Copyright (C) 2002  Nathan O'Sullivan
+Copyright (C) 2002 Nathan O'Sullivan
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -22,14 +18,6 @@ but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 ******************************************************************
-
-Thanks:
-
-Arny <cs6171@scitsc.wlv.ac.uk>
-- public domain UDP spoofing code
-http://www.netfor2.com/ip.htm
-- IP/UDP packet formatting info
-
 */
 
 #define MAXIFS	256
