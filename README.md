@@ -6,8 +6,8 @@ a packet is received, it sends that packet to all specified interfaces
 but the one it came from as though it originated from the original
 sender.
 
-The primary purpose of this is to allow games on machines on separated
-local networks (Ethernet, WLAN) that use udp broadcasts to find each
+The primary purpose of this is to allow devices or game servers on separated
+local networks (Ethernet, WLAN, VLAN) that use udp broadcasts to find each
 other to do so.
 
 INSTALL
