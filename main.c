@@ -442,27 +442,27 @@ int main(int argc,char **argv) {
 		if (rcv_msg.msg_controllen > 0) {
 			for (cmsg=CMSG_FIRSTHDR(&rcv_msg);cmsg;cmsg=CMSG_NXTHDR(&rcv_msg,cmsg)) {
 				#ifdef __FreeBSD__
-				if (cmsg->cmsg_type==IP_RECVTTL) {
-					rcv_ttl = *(int *)CMSG_DATA(cmsg);
-				}
-				if (cmsg->cmsg_type==IP_RECVDSTADDR) {
-					rcv_inaddr=*((struct in_addr *)CMSG_DATA(cmsg));
-					foundRcvIp = 1;
-				}
-				if (cmsg->cmsg_type==IP_RECVIF) {
-					rcv_ifindex=((struct sockaddr_dl *)CMSG_DATA(cmsg))->sdl_index;
-					foundRcvIf = 1;
-				}
+					if (cmsg->cmsg_type==IP_RECVTTL) {
+						rcv_ttl = *(int *)CMSG_DATA(cmsg);
+					}
+					if (cmsg->cmsg_type==IP_RECVDSTADDR) {
+						rcv_inaddr=*((struct in_addr *)CMSG_DATA(cmsg));
+						foundRcvIp = 1;
+					}
+					if (cmsg->cmsg_type==IP_RECVIF) {
+						rcv_ifindex=((struct sockaddr_dl *)CMSG_DATA(cmsg))->sdl_index;
+						foundRcvIf = 1;
+					}
 				#else
-				if (cmsg->cmsg_type==IP_TTL) {
-					rcv_ttl = *(int *)CMSG_DATA(cmsg);
-				}
-				if (cmsg->cmsg_type==IP_PKTINFO) {
-					rcv_ifindex=((struct in_pktinfo *)CMSG_DATA(cmsg))->ipi_ifindex;
-					foundRcvIf = 1;
-					rcv_inaddr=((struct in_pktinfo *)CMSG_DATA(cmsg))->ipi_addr;
-					foundRcvIp = 1;
-				}
+					if (cmsg->cmsg_type==IP_TTL) {
+						rcv_ttl = *(int *)CMSG_DATA(cmsg);
+					}
+					if (cmsg->cmsg_type==IP_PKTINFO) {
+						rcv_ifindex=((struct in_pktinfo *)CMSG_DATA(cmsg))->ipi_ifindex;
+						foundRcvIf = 1;
+						rcv_inaddr=((struct in_pktinfo *)CMSG_DATA(cmsg))->ipi_addr;
+						foundRcvIp = 1;
+					}
 				#endif
 			}
 		}
@@ -478,6 +478,13 @@ int main(int argc,char **argv) {
 		if (!rcv_ttl) {
 			perror("TTL not found on incoming packet\n");
 			continue;
+		}
+
+		struct Iface* fromIface = NULL;
+		for (int iIf = 0; iIf < maxifs; iIf++) {
+			if (ifs[iIf].ifindex == rcv_ifindex) {
+				fromIface = &ifs[iIf];
+			}
 		}
 
 		struct in_addr origFromAddress = rcv_addr.sin_addr;
@@ -501,13 +508,19 @@ int main(int argc,char **argv) {
 			DPRINT("Echo (Ignored)\n\n");
 			continue;
 		}
+		if (!fromIface) {
+			DPRINT("Not from managed iface\n\n");
+			continue;
+		}
 
 		/* Iterate through our interfaces and send packet to each one */
-		for (int x=0;x<maxifs;x++) {
-			struct Iface* iface = &ifs[x];
+		for (int iIf = 0; iIf < maxifs; iIf++) {
+			struct Iface* iface = &ifs[iIf];
 
 			/* no bounces, please */
-			if (iface->ifindex == rcv_ifindex) continue;
+			if (iface == fromIface) {
+				continue;
+			}
 
 			struct in_addr fromAddress;
 			u_short fromPort;
@@ -524,7 +537,7 @@ int main(int argc,char **argv) {
 
 			struct in_addr toAddress;
 			if (rcv_inaddr.s_addr == INADDR_BROADCAST
-			    || rcv_inaddr.s_addr == ifs[rcv_ifindex].dstaddr.s_addr) {
+			    || rcv_inaddr.s_addr == fromIface->dstaddr.s_addr) {
 				// Received on interface broadcast address -- rewrite to new interface broadcast addr
 				toAddress = iface->dstaddr;
 			} else {
