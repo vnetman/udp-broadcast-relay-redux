@@ -110,8 +110,12 @@ int main(int argc,char **argv) {
             "    -d      enables debugging\n"
             "    -f      forces forking to background\n"
             "    -s IP   sets the source IP of forwarded packets; otherwise the\n"
-            "            original sender's address is used. 1.1.1.1 uses outgoing\n"
-            "            interface address.\n\n"
+            "            original sender's address is used.\n"
+            "            Setting to 1.1.1.1 uses outgoing interface address and broadcast port.\n"
+            "            (helps in some rare cases)\n"
+            "            Setting to 1.1.1.2 uses outgoing interface address and source port.\n"
+            "            (helps in some rare cases)\n"
+            "\n"
         );
         exit(1);
     }
@@ -517,6 +521,9 @@ int main(int argc,char **argv) {
             if (spoof_addr == inet_addr("1.1.1.1")) {
                 fromAddress = iface->ifaddr;
                 fromPort = port;
+            } else if (spoof_addr == inet_addr("1.1.1.2")) {
+                fromAddress = iface->ifaddr;
+                fromPort = origFromPort;
             } else if (spoof_addr) {
                 fromAddress.s_addr = spoof_addr;
                 fromPort = origFromPort;
