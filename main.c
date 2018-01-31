@@ -202,6 +202,7 @@ int main(int argc,char **argv) {
 		strncpy(basereq.ifr_name,interfaceNames[i],IFNAMSIZ);
 
 		/* Request index for this interface */
+		#ifndef ___APPLE__
 		{
 			struct ifreq req;
 			memcpy(&req, &basereq, sizeof(req));
@@ -215,6 +216,7 @@ int main(int argc,char **argv) {
 			iface->ifindex = req.ifr_ifindex;
 			#endif
 		}
+		#endif
 
 		/* Request flags for this interface */
 		short ifFlags;
@@ -551,14 +553,13 @@ int main(int argc,char **argv) {
 			memcpy(gram+16, &toAddress.s_addr, 4);
 			*(u_short*)(gram+20)=htons(fromPort);
 			*(u_short*)(gram+22)=htons(toPort);
-			// This is only needed for FreeBSD <= 10 | pfSense <= 2.3.*
-			//#ifdef __FreeBSD__
-			//*(u_short*)(gram+24)=htons(UDPHEADER_LEN + len);
-			//*(u_short*)(gram+2)=HEADER_LEN + len;
-			//#else
+			#if (defined __FreeBSD__ && __FreeBSD__ <= 10) || defined __APPLE__
+			*(u_short*)(gram+24)=htons(UDPHEADER_LEN + len);
+			*(u_short*)(gram+2)=HEADER_LEN + len;
+			#else
 			*(u_short*)(gram+24)=htons(UDPHEADER_LEN + len);
 			*(u_short*)(gram+2)=htons(HEADER_LEN + len);
-			//#endif
+			#endif
 			struct sockaddr_in sendAddr;
 			sendAddr.sin_family = AF_INET;
 			sendAddr.sin_port = htons(toPort);
