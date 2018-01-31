@@ -206,21 +206,27 @@ int main(int argc,char **argv) {
         strncpy(basereq.ifr_name,interfaceNames[i],IFNAMSIZ);
 
         /* Request index for this interface */
-        #ifndef ___APPLE__
         {
-            struct ifreq req;
-            memcpy(&req, &basereq, sizeof(req));
-            if (ioctl(fd,SIOCGIFINDEX, &req) < 0) {
-                perror("ioctl(SIOCGIFINDEX)");
-                exit(1);
-            }
-            #ifdef __FreeBSD__
-            iface->ifindex = req.ifr_index;
+            #ifdef ___APPLE__
+                /*
+                TODO: Supposedly this works for all OS, including non-Apple, 
+                and could replace the code below
+                */
+                iface->ifindex = if_nametoindex(interfaceNames[i]);
             #else
-            iface->ifindex = req.ifr_ifindex;
+                struct ifreq req;
+                memcpy(&req, &basereq, sizeof(req));
+                if (ioctl(fd,SIOCGIFINDEX, &req) < 0) {
+                    perror("ioctl(SIOCGIFINDEX)");
+                    exit(1);
+                }
+                #ifdef __FreeBSD__
+                iface->ifindex = req.ifr_index;
+                #else
+                iface->ifindex = req.ifr_ifindex;
+                #endif
             #endif
         }
-        #endif
 
         /* Request flags for this interface */
         short ifFlags;
