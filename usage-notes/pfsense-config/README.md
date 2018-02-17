@@ -64,8 +64,8 @@ when the router is rebooted.
 
 This is done with the init and configuration scripts in this directory.
 
-1. The init script: [/usr/local/etc/rc.d/udp-broadcast-relay.sh](usage-notes/pfsense-config/udp-broadcast-relay.sh)
-2. The configuration file: [/usr/local/etc/udp-broadcast-relay-redux.conf](usage-notes/pfsense-config/udp-broadcast-relay-redux.conf)
+1. The init script: [/usr/local/etc/rc.d/udp-broadcast-relay.sh](udp-broadcast-relay.sh)
+2. The configuration file: [/usr/local/etc/udp-broadcast-relay-redux.conf](udp-broadcast-relay-redux.conf)
 3. And a modification to `/etc/rc.conf.local`.
 
 So place the `udp-broadcast-relay.sh` script into `/etc/local/etc/rc.d/`.
