@@ -20,7 +20,9 @@ broadcast packet must be relayed.
 
 ## Configuring *udp-broadcast-relay-redux* for pfSense 2.4
 
-**Note. This is written from the perspective of a Linux user.  if you're already a BSD user then you'll already know much of this.  Skip to the "Configuring the router section".**
+**Note. This is written from the perspective of a Linux user.  If you're
+already a BSD user then you'll already know much of this.  Skip to the
+"Configuring the router section".**
 
 Although make is installed on [pfSense][], very sensibly, gcc is not.  And you
 shouldn't even think of installing gcc on your router!  So a build machine is
@@ -103,15 +105,54 @@ To stop the service, use:
 # service udp-broadcast-relay.sh stop
 ```
 
-And to disable the service comletely, either delete the
-`udp-broadcast-relay.sh` file, or swith the `YES` to a `NO` in the
+And to disable the service completely, either delete the
+`udp-broadcast-relay.sh` file, or with the `YES` to a `NO` in the
 `/etc/rc.conf.local` file.
 
-## ToDo
+## Multiple instances
 
-At the moment, the configuration only supports a single instance.  It would be
-useful to extend this so that multiple instances of `udp-broadcast-relay-redux`
-can be started with different configurations.
+It's possible to also configure multiple instances of
+`udp-broadcast-relay-redux` by duplicating the files of the single
+instance above to create a new instance.  e.g. to create a second
+instance:
+
+```shell
+# cd /usr/local/etc/rc.d
+# cp udp-broadcast-relay.sh udp-broadcast-relay2.sh
+```
+
+Then rename your second instance variables:
+
+```shell
+# nano udp-broadcast-relay.sh
+# name="udp-broadcast-relay2"
+# rcvar="udp_broadcast_relay2_enable"
+...
+conf_file="/usr/local/etc/udp-broadcast-relay-redux2.conf"
+```
+
+Next do the same with the config file:
+
+```shell
+# cd /usr/local/etc/
+# cp udp-broadcast-relay-redux.conf udp-broadcast-relay-redux2.conf
+# nano udp-broadcast-relay-redux2.conf
+```
+
+And change to: `--id 2` and whatever other ports and settings you need in
+your new instance.
+
+Finally add the service:
+
+```shell
+# nano /etc/rc.conf.local
+```
+
+And add a new line:
+
+`udp_broadcast_relay2_enable=YES`
+
+Rinse and repeat as needed.
 
 
 [Syncthing]: https://syncthing.net/
