@@ -153,7 +153,7 @@ int main(int argc,char **argv) {
         else if (strcmp(argv[i],"--port") == 0) {
             i++;
             port = atoi(argv[i]);
-            DPRINT ("Port set to %i\n", id);
+            DPRINT ("Port set to %i\n", port);
         }
         else if (strcmp(argv[i],"--dev") == 0) {
             i++;
