@@ -3,7 +3,7 @@ CONTRIBUTORS
 
 (Reverse chronological)
 
--   [Michael Morrison](https://github.com/sonicsnes) forked to
+-   [Michael Morrison](https://github.com/mmorrisontx) forked to
     udp-broadcast-relay-redux, refactored the code, added support for
     FreeBSD / pfSense, multicast packets, and interface source address.
 -   udp-broadcast-relay-redux was based on udp-broadcast-relay by

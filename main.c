@@ -4,7 +4,8 @@ udp-broadcast-relay-redux
     Relays UDP broadcasts to other networks, forging
     the sender address.
 
-Copyright (c) 2017 Michael Morrison <github.com/sonicsnes>
+Copyright (c) 2017 UDP Broadcast Relay Redux Contributors
+  <github.com/udp-redux/udp-broadcast-relay-redux>
 Copyright (c) 2003 Joachim Breitner <mail@joachim-breitner.de>
 Copyright (C) 2002 Nathan O'Sullivan
 
