@@ -46,7 +46,7 @@ $ # and because tmux lets you have multiple windows
 $ tmux
 $ pkg install gcc
 $ pkg install git
-$ git clone https://github.com/sonicsnes/udp-broadcast-relay-redux.git
+$ git clone https://github.com/udp-redux/udp-broadcast-relay-redux.git
 $ # or the version that you are going to use.
 ```
 

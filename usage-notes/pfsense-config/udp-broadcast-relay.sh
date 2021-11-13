@@ -3,7 +3,7 @@
 # REQUIRE: NETWORKING
 # PROVIDE: udp-broadcast-relay
 
-# start/stop script for the github sonicsnes/udp-broadcast-relay-redux
+# start/stop script for the github udp-redux/udp-broadcast-relay-redux
 
 . /etc/rc.subr
 
