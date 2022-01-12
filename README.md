@@ -80,6 +80,9 @@ Router 2 (target):
 
 `./udp-broadcast-relay-redux --id 2 --port 6112 --dev br-lan --dev tun0 -t 255.255.255.255`
 
+#### HDHomerun Discovery
+`./udp-broadcast-relay-redux --id 1 --port 65001 --dev eth0 --dev eth1`
+
 Note about firewall rules
 ---
 
