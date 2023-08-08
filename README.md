@@ -16,25 +16,21 @@ The primary purpose of this is to allow devices or game servers on separated loc
 
 ## Command line arguments
 
-| Argument                | Meaning                                                                                                                       |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `--port <1-65535>`      | Mandatory. The UDP port to process.                                                                                           |
-| `--left <name>`         | Mandatory. The name of the *left* network interface.                                                                          |
-| `--right <name>`        | Mandatory. The name of the *right* network interface.                                                                         |
-| `--left-src <arg>`      | Mandatory. The source IP address that is set on packets that arrive on right and are forwarded to left.                       |
-|                         | It can have the following values:                                                                                             |
-|                         | * `unchanged` : The original source IP address from the received packet is retained in the transmitted packet.                |
-|                         | * `ifaddr`    : The source IP address in the transmitted packet is set to the IP address of the *left* interface.             |
-|                         | * x.x.x.x     : The source IP address in the transmitted packet is set to the specified IP address.                           |
-| `--left-dst <arg>`      | Mandatory. The destination IP address that is set on packets that arrive on right and are forwarded to left.                  |
-|                         | It can have the following values:                                                                                             |
-|                         | * `broadcast` : The destination IP address on the transmitted packet is set to the broadcast address of the *left* interface. |
-|                         | * x.x.x.x     : The destination IP address on the transmitted packet is set to the specified IP address.                      |
-| `--right-src <arg>`     | Same as the `--left-src` argument, but for packets received on *left* and forwarded to *right*                                |
-| `--right-dst <arg>`     | Same as the `--left-dst` argument, but for packets received on *left* and forwarded to *right*                                |
-| `--echo-marker <1-255>` | Mandatory if either `--left-src` or `--right-src` is set to `unchanged`.                                                      |
-|                         | This value is set as the TTL in the IP header of transmitted packets, to enable the application                               |
-|                         | to identify "echos", i.e.broadcast packets sent by the application and received on account of being broadcasts.               |
+| Argument                | Meaning                                                                                                                                           |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--port <1-65535>`      | Mandatory. The UDP port to process.                                                                                                               |
+| `--left <name>`         | Mandatory. The name of the *left* network interface.                                                                                              |
+| `--right <name>`        | Mandatory. The name of the *right* network interface.                                                                                             |
+| `--left-src <arg>`      | Mandatory. The source IP address that is set on packets that arrive on right and are forwarded to left. `<arg>` can have the following values:    |
+|                         |  `unchanged` : The original source IP address from the received packet is retained in the transmitted packet.                                     |
+|                         |  `ifaddr`    : The source IP address in the transmitted packet is set to the IP address of the *left* interface.                                  |
+|                         |  x.x.x.x     : The source IP address in the transmitted packet is set to the specified IP address.                                                |
+| `--left-dst <arg>`      | Mandatory. The destination IP address that is set on packets that arrive on right and are forwarded to left. <arg> can have the following values: |
+|                         |  `broadcast` : The destination IP address on the transmitted packet is set to the broadcast address of the *left* interface.                      |
+|                         |  x.x.x.x     : The destination IP address on the transmitted packet is set to the specified IP address.                                           |
+| `--right-src <arg>`     | Same as the `--left-src` argument, but for packets received on *left* and forwarded to *right*                                                    |
+| `--right-dst <arg>`     | Same as the `--left-dst` argument, but for packets received on *left* and forwarded to *right*                                                    |
+| `--echo-marker <1-255>` | Mandatory if either `--left-src` or `--right-src` is set to `unchanged`. This value is set as the TTL in the IP header of transmitted packets, to enable the application to identify "echos", i.e.broadcast packets sent by the application and received on account of being broadcasts.               |
 | `--debug`               | Print debug messages on stderr or syslog                                                                                      |
 | `--fork`                | Fork to the background just before starting the packet processing operation                                                   |
 
